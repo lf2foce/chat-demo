@@ -1,12 +1,14 @@
+import os
 from pinecone import Pinecone
 from llama_index.vector_stores.pinecone import PineconeVectorStore
-from llama_index.vector_stores.qdrant import QdrantVectorStore
-import os
+# from llama_index.vector_stores.qdrant import QdrantVectorStore
+# import qdrant_client
+
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.core.settings import Settings
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
-import qdrant_client
+
 
 
 # Settings.node_parser = SentenceSplitter(chunk_size=1024, chunk_overlap=200)

@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # LlamaIndex
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.llms.google_genai import GoogleGenAI
-from llama_index.indices.managed.llama_cloud import LlamaCloudIndex
+# from llama_index.indices.managed.llama_cloud import LlamaCloudIndex
 from llama_index.core import VectorStoreIndex, StorageContext, Settings
 from llama_index.core.chat_engine import SimpleChatEngine
 from llama_index.core.memory import ChatMemoryBuffer
@@ -19,8 +19,9 @@ from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.query_engine import RouterQueryEngine
 from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.core.selectors import LLMSingleSelector
-from llama_index.llms.deepseek import DeepSeek
-from llama_index.llms.groq import Groq
+# from llama_index.llms.deepseek import DeepSeek
+# from llama_index.llms.groq import Groq
+# from llama_index.llms.cerebras import Cerebras
 
 from my_module import setup_pinecone_vector_index
 
@@ -163,7 +164,6 @@ def setup_rag_system():
     #     # max_tokens=4000
     # )
 
-    # from llama_index.llms.cerebras import Cerebras
     # llm = Cerebras(
     #     # model="llama-3.1-8b", 
     #     model="llama-3.3-70b",  
