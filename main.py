@@ -22,5 +22,5 @@ app.add_middleware(
 )
 
 # Đăng ký router với prefix riêng
-app.include_router(chat_router, tags=["Chat"])
+# app.include_router(chat_router, tags=["Chat"])
 app.include_router(grade_router, prefix="/api/py", tags=["Grade"])
