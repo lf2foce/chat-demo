@@ -1,12 +1,12 @@
-fastapi
-uvicorn
-python-multipart
+fastapi==0.115.12
+uvicorn==0.30.6
+python-multipart==0.0.20
 pandas==2.2.3
 openpyxl==3.1.5
 openai==1.84.0
 instructor==1.8.3
 markitdown[pdf, docx, xlsx]
-google-genai==1.19.0
+google-genai==1.17.0
 python-dotenv
 together==1.5.8
 llama-index==0.12.40

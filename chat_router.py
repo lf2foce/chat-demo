@@ -144,9 +144,8 @@ def setup_rag_system():
         model="gemini-2.0-flash",
     )
 
-     # llm = DeepSeek(model="deepseek-chat")
+    # llm = DeepSeek(model="deepseek-chat")
     
-
     # llm=Groq(
     #     # model="meta-llama/llama-4-maverick-17b-128e-instruct", # k ổn
     #     model="llama-3.3-70b-versatile",
