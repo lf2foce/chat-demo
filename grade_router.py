@@ -268,17 +268,17 @@ async def grade_exam_with_rubric(
                     'result': result
                 })
               
-                yield f"data: {json.dumps({'index': index, 'completed': completed_count, 'total': total_files, 'result': result.model_dump()})}\n\n"
-                # payload = {
-                #     "index": index,
-                #     "completed": completed_count,
-                #     "total": total_files,
-                #     # result là Pydantic object, nên phải chuyển về dict trước:
-                #     "result": result.model_dump()
-                # }
-                # msg = f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-                # print(msg)  # log thử
-                # yield msg
+                # # yield f"data: {json.dumps({'index': index, 'completed': completed_count, 'total': total_files, 'result': result.model_dump()})}\n\n"
+                payload = {
+                    "index": index,
+                    "completed": completed_count,
+                    "total": total_files,
+                    # result là Pydantic object, nên phải chuyển về dict trước:
+                    "result": result.model_dump()
+                }
+                msg = f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                print(msg)  # log thử
+                yield msg
 
             # Phần xuất Excel đã được comment trong file gốc
             # Giữ nguyên comment để tham khảo sau này
