@@ -6,7 +6,7 @@ openpyxl==3.1.5
 openai==1.84.0
 instructor==1.8.3
 markitdown[pdf, docx, xlsx]
-google-genai==1.17.0
+google-genai==1.19.0
 python-dotenv
 # together==1.5.8
 # llama-index==0.12.40
