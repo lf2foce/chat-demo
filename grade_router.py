@@ -81,7 +81,7 @@ def extract_rubric_from_markdown(markdown_text: str) -> Rubric:
             contents=prompt,
             config={
                 'response_mime_type': 'application/json',
-                'response_schema': Rubric.model_json_schema(),
+                'response_schema': Rubric,
                 'system_instruction': types.Part.from_text(text=system_instruction),
                 'temperature': 0.0,
             },
@@ -150,7 +150,7 @@ async def call_llm_grading_async(assignment_prompt: str, rubric_criteria: List[R
             contents=prompt,
             config={
                 'response_mime_type': 'application/json',
-                'response_schema': ExamResult.model_json_schema(),
+                'response_schema': ExamResult,
                 'system_instruction': types.Part.from_text(text=system_instruction),
                 'temperature': 0.0,
                 'seed': 42
