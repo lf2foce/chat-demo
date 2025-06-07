@@ -267,14 +267,23 @@ async def grade_exam_with_rubric(
                     'filename': filename,
                     'result': result
                 })
-                
-                # yield f"data: {json.dumps({'index': index, 'completed': completed_count, 'total': total_files, 'result': result.model_dump()})}\n\n"
-                yield "data: " + json.dumps({
+                # nếu không chắc lỗi ở đâu
+                # yield f"data: {json.dumps({'index': index, 'completed': completed_count})}\n\n"
+
+                # # yield f"data: {json.dumps({'index': index, 'completed': completed_count, 'total': total_files, 'result': result.model_dump()})}\n\n"
+                msg = "data: " + json.dumps({
                     "index": index,
                     "completed": completed_count,
                     "total": total_files,
                     "result": result.model_dump()
                 }, ensure_ascii=False) + "\n\n"
+
+                print("---SSE MESSAGE---")
+                print(msg)
+                print("------")
+
+                yield msg
+
             # Phần xuất Excel đã được comment trong file gốc
             # Giữ nguyên comment để tham khảo sau này
             # if all_results:
