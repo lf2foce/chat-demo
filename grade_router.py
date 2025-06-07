@@ -1,19 +1,17 @@
-from fastapi import APIRouter, UploadFile, File, Form
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from fastapi import APIRouter
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
 from markitdown import MarkItDown
 from dotenv import load_dotenv
-import os
 import json
-# import together
-# import pandas as pd
 import io
 import asyncio
 from google import genai
 from google.genai import types
-from fastapi.responses import StreamingResponse
-from datetime import datetime
-import tempfile
+from fastapi.responses import StreamingResponse, JSONResponse
+import uuid
 
 # Load environment variables
 load_dotenv()
@@ -46,8 +44,9 @@ class ExamResult(BaseModel):
         super().__init__(**data)
         self.total_score = sum(c.score for c in self.criteria)
 
-class ExamResultList(BaseModel):
-    results: List[ExamResult]
+
+# Tạo router - không đặt prefix ở đây, sẽ đặt trong main_test.py
+grade_router = APIRouter()
 
 # Utilities
 def convert_docx_to_markdown(docx_file) -> str:
@@ -81,7 +80,7 @@ def extract_rubric_from_markdown(markdown_text: str) -> Rubric:
             contents=prompt,
             config={
                 'response_mime_type': 'application/json',
-                'response_schema': Rubric,
+                'response_schema': Rubric.model_json_schema(),
                 'system_instruction': types.Part.from_text(text=system_instruction),
                 'temperature': 0.0,
             },
@@ -92,11 +91,8 @@ def extract_rubric_from_markdown(markdown_text: str) -> Rubric:
     except Exception as e:
         return Rubric(criteria=[])
 
-def parse_exam_file(file) -> str:
-    return convert_docx_to_markdown(file)
-
 async def call_llm_grading_async(assignment_prompt: str, rubric_criteria: List[RubricCriterion], file) -> ExamResult:
-    essay_text = parse_exam_file(file)
+    essay_text = convert_docx_to_markdown(file)
 
     criteria_descriptions = []
     for idx, criterion in enumerate(rubric_criteria, 1):
@@ -150,7 +146,7 @@ async def call_llm_grading_async(assignment_prompt: str, rubric_criteria: List[R
             contents=prompt,
             config={
                 'response_mime_type': 'application/json',
-                'response_schema': ExamResult,
+                'response_schema': ExamResult.model_json_schema(),
                 'system_instruction': types.Part.from_text(text=system_instruction),
                 'temperature': 0.0,
                 'seed': 42
@@ -167,8 +163,9 @@ async def call_llm_grading_async(assignment_prompt: str, rubric_criteria: List[R
             criteria=[]
         )
 
-# Tạo router - không đặt prefix ở đây, sẽ đặt trong main_test.py
-grade_router = APIRouter()
+
+# In-memory storage for grading sessions
+grading_sessions: Dict[str, Dict[str, Any]] = {}
 
 @grade_router.post("/extract-rubric")
 async def extract_rubric(rubric_file: UploadFile = File(...)):
@@ -178,165 +175,83 @@ async def extract_rubric(rubric_file: UploadFile = File(...)):
         rubric = extract_rubric_from_markdown(markdown_text)
         return rubric
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
-@grade_router.post("/grade-exam")
-async def grade_exam(
-    assignment_prompt: str = Form(...),
-    rubric_file: UploadFile = File(...),
-    exam_files: List[UploadFile] = File(...)
-):
-    try:
-        # Extract rubric
-        rubric_content = await rubric_file.read()
-        markdown_text = convert_docx_to_markdown(io.BytesIO(rubric_content))
-        rubric = extract_rubric_from_markdown(markdown_text)
-        
-        # Process each exam file
-        results = []
-        for exam_file in exam_files:
-            file_content = await exam_file.read()
-            result = await call_llm_grading_async(
-                assignment_prompt,
-                rubric.criteria,
-                io.BytesIO(file_content)
-            )
-            results.append(result)
-        
-        return ExamResultList(results=results)
-    except Exception as e:
-        return {"error": str(e)}
-
-@grade_router.post("/grade-exam-with-rubric")
-async def grade_exam_with_rubric(
+@grade_router.post("/upload-and-grade")
+async def upload_and_grade(
     assignment_prompt: str = Form(...),
     rubric: str = Form(...),
     exam_files: List[UploadFile] = File(...)
 ):
+    session_id = uuid.uuid4().hex
     try:
-        # Parse rubric from JSON string
         rubric_data = json.loads(rubric)
         rubric_obj = Rubric(**rubric_data)
         
-        # Đọc tất cả file content trước để tránh lỗi file đã đóng
         file_contents = []
         for exam_file in exam_files:
             content = await exam_file.read()
-            file_contents.append((exam_file.filename, content))
+            file_contents.append({'filename': exam_file.filename, 'content': content})
         
-        # Hàm xử lý file content không có semaphore (để batch tự quản lý)
-        async def process_file_content(filename, file_content):
+        grading_sessions[session_id] = {
+            "assignment_prompt": assignment_prompt,
+            "rubric_obj": rubric_obj,
+            "file_contents": file_contents,
+            "status": "pending",
+            "results": []
+        }
+        return JSONResponse(content={"session_id": session_id})
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid rubric JSON format.")
+    except Exception as e:
+        if session_id in grading_sessions:
+            del grading_sessions[session_id]
+        raise HTTPException(status_code=500, detail=f"Error processing upload: {str(e)}")
+
+async def stream_grading_results_for_session(session_id: str):
+    session_data = grading_sessions.get(session_id)
+    if not session_data:
+        yield f"data: {json.dumps({'error': 'Invalid session ID or session expired'})}\n\n"
+        return
+
+    assignment_prompt = session_data["assignment_prompt"]
+    rubric_obj = session_data["rubric_obj"]
+    file_contents_with_filenames = session_data["file_contents"]
+    
+    session_data["status"] = "processing"
+
+    semaphore = asyncio.Semaphore(5)
+    total_files = len(file_contents_with_filenames)
+    completed_count = 0
+    
+    async def process_file_content_with_semaphore(index, filename, file_content_bytes):
+        async with semaphore:
             result = await call_llm_grading_async(
                 assignment_prompt,
                 rubric_obj.criteria,
-                io.BytesIO(file_content)
+                io.BytesIO(file_content_bytes)
             )
-            return result
-        
-        # Nếu muốn trả về kết quả đồng bộ (đợi tất cả hoàn thành)
-        if not rubric_data.get("stream", False):
-            tasks = [process_file_content(filename, content) for filename, content in file_contents]
-            results = await asyncio.gather(*tasks)
-            return ExamResultList(results=results)
-        
-        # Nếu muốn streaming response (xử lý đồng thời tất cả file với semaphore)
-        async def stream_results():
-            semaphore = asyncio.Semaphore(5)  # Giới hạn 5 file đồng thời
-            total_files = len(file_contents)
-            all_results = []  # Thu thập tất cả kết quả
-            completed_count = 0
-            
-            async def process_with_semaphore(index, filename, content):
-                async with semaphore:
-                    result = await process_file_content(filename, content)
-                    return index, filename, result
-            
-            # Tạo tất cả tasks cùng lúc
-            tasks = [
-                process_with_semaphore(i, filename, content)
-                for i, (filename, content) in enumerate(file_contents)
-            ]
-            
-            # Sử dụng asyncio.as_completed để stream kết quả ngay khi có
-            for completed_task in asyncio.as_completed(tasks):
-                index, filename, result = await completed_task
-                completed_count += 1
-                
-                # Lưu kết quả để xuất Excel sau này
-                all_results.append({
-                    'filename': filename,
-                    'result': result
-                })
-              
-                # # yield f"data: {json.dumps({'index': index, 'completed': completed_count, 'total': total_files, 'result': result.model_dump()})}\n\n"
-                payload = {
-                    "index": index,
-                    "completed": completed_count,
-                    "total": total_files,
-                    # result là Pydantic object, nên phải chuyển về dict trước:
-                    "result": result.model_dump()
-                }
-                msg = f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-                print(msg)  # log thử
-                yield msg
+            return index, filename, result
 
-            # Phần xuất Excel đã được comment trong file gốc
-            # Giữ nguyên comment để tham khảo sau này
-            # if all_results:
-            #     try:
-            #         # Tạo DataFrame từ kết quả
-            #         excel_data = []
-            #         for item in all_results:
-            #             result_data = {
-            #                 'Filename': item['filename'],
-            #                 'Student Name': item['result'].student_name,
-            #                 'Student ID': item['result'].student_id,
-            #                 'Total Score': item['result'].total_score,
-            #                 'Max Total Score': item['result'].max_total_score,
-            #                 'Overall Comment': item['result'].overall_comment
-            #             }
-                        
-            #             # Thêm điểm từng tiêu chí
-            #             for criterion in item['result'].criteria:
-            #                 result_data[f"{criterion.criterion} Score"] = criterion.score
-            #                 result_data[f"{criterion.criterion} Max Score"] = criterion.max_score
-            #                 result_data[f"{criterion.criterion} Comment"] = criterion.comment
-                        
-            #             excel_data.append(result_data)
-                    
-            #         df = pd.DataFrame(excel_data)
-                    
-            #         # Tạo file Excel trong thư mục api
-            #         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            #         excel_filename = f"grading_results_{timestamp}.xlsx"
-            #         excel_path = f"./api/{excel_filename}"
-                    
-            #         # Xuất ra Excel với định dạng
-            #         with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-            #             df.to_excel(writer, sheet_name='Grading Results', index=False)
-                        
-            #             # Tự động điều chỉnh độ rộng cột
-            #             worksheet = writer.sheets['Grading Results']
-            #             for column in worksheet.columns:
-            #                 max_length = 0
-            #                 column_letter = column[0].column_letter
-            #                 for cell in column:
-            #                     try:
-            #                         if len(str(cell.value)) > max_length:
-            #                             max_length = len(str(cell.value))
-            #                     except:
-            #                         pass
-            #                 adjusted_width = min(max_length + 2, 50)
-            #                 worksheet.column_dimensions[column_letter].width = adjusted_width
-                    
-               
-            #         # Stream thông báo về file Excel đã tạo
-            #         yield f"data: {json.dumps({'type': 'excel_created', 'filename': excel_filename, 'path': excel_path, 'download_url': f'/api/py/download-excel/{excel_filename}'})}\n\n"
-                    
-            #     except Exception as e:
-            #         yield f"data: {json.dumps({'type': 'excel_error', 'error': str(e)})}\n\n"
+    tasks = [
+        process_file_content_with_semaphore(i, item['filename'], item['content'])
+        for i, item in enumerate(file_contents_with_filenames)
+    ]
 
-        
-        return StreamingResponse(stream_results(), media_type="text/event-stream")
+    try:
+        for completed_task in asyncio.as_completed(tasks):
+            index, filename, result = await completed_task
+            completed_count += 1
+            session_data["results"].append({'filename': filename, 'result': result.model_dump()})
+            yield f"data: {json.dumps({'index': index, 'filename': filename, 'completed': completed_count, 'total': total_files, 'result': result.model_dump()})}\n\n"
+        session_data["status"] = "completed"
     except Exception as e:
-        return {"error": str(e)}
+        session_data["status"] = "error"
+        session_data["error_message"] = str(e)
+        yield f"data: {json.dumps({'error': f'Error during grading: {str(e)}'})}\n\n"
+
+@grade_router.get("/stream-grading-progress/{session_id}")
+async def stream_grading_progress(session_id: str):
+    if session_id not in grading_sessions:
+        raise HTTPException(status_code=404, detail="Session not found or expired.")
+    return StreamingResponse(stream_grading_results_for_session(session_id), media_type="text/event-stream")

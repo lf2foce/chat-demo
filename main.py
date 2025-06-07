@@ -12,10 +12,15 @@ from grade_router import grade_router
 # FastAPI app
 app = FastAPI(title="RAG Chat API", version="1.0.0")
 
-# CORS middleware
+# CORS configuration
+origins = [
+    "http://localhost:3000",
+    "https://chamdiem.com"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
