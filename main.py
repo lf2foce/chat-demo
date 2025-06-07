@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import routers sau khi đã load environment variables
-from chat_router import chat_router
+# from chat_router import chat_router
 from grade_router import grade_router
 
 # FastAPI app
