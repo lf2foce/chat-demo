@@ -1,11 +1,18 @@
 fastapi
 uvicorn
-openai
-llama-index 
+pandas==2.2.3
+openpyxl==3.1.5
+openai==1.84.0
+instructor==1.8.3
+markitdown[pdf, docx, xlsx]
+google-genai==1.19.0
+python-dotenv
+together==1.5.8
+llama-index==0.12.40
 llama-index-embeddings-huggingface
 llama-index-utils-workflow
-llama-index-embeddings-google-genai
-llama-index-llms-google-genai
+llama-index-embeddings-google-genai==0.2.0
+llama-index-llms-google-genai==0.2.1
 llama-index-vector-stores-pinecone
 pyvis
-llama-index-experimental
+llama-index-experimental==0.5.6
