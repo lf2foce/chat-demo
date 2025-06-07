@@ -267,21 +267,17 @@ async def grade_exam_with_rubric(
                     'filename': filename,
                     'result': result
                 })
-                # nếu không chắc lỗi ở đâu
-                # yield f"data: {json.dumps({'index': index, 'completed': completed_count})}\n\n"
-
+              
                 # # yield f"data: {json.dumps({'index': index, 'completed': completed_count, 'total': total_files, 'result': result.model_dump()})}\n\n"
-                msg = "data: " + json.dumps({
+                payload = {
                     "index": index,
                     "completed": completed_count,
                     "total": total_files,
+                    # result là Pydantic object, nên phải chuyển về dict trước:
                     "result": result.model_dump()
-                }, ensure_ascii=False) + "\n\n"
-
-                print("---SSE MESSAGE---")
-                print(msg)
-                print("------")
-
+                }
+                msg = f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                print(msg)  # log thử
                 yield msg
 
             # Phần xuất Excel đã được comment trong file gốc
