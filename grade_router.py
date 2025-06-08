@@ -191,16 +191,24 @@ async def grade_exam(
         markdown_text = convert_docx_to_markdown(io.BytesIO(rubric_content))
         rubric = extract_rubric_from_markdown(markdown_text)
         
-        # Process each exam file
-        results = []
+        # Process each exam file concurrently
+        semaphore = asyncio.Semaphore(5)
+        tasks = []
+
+        async def process_file_with_semaphore(exam_file_upload: UploadFile):
+            async with semaphore:
+                file_content = await exam_file_upload.read()
+                result = await call_llm_grading_async(
+                    assignment_prompt,
+                    rubric.criteria,
+                    io.BytesIO(file_content)
+                )
+                return result
+
         for exam_file in exam_files:
-            file_content = await exam_file.read()
-            result = await call_llm_grading_async(
-                assignment_prompt,
-                rubric.criteria,
-                io.BytesIO(file_content)
-            )
-            results.append(result)
+            tasks.append(process_file_with_semaphore(exam_file))
+        
+        results = await asyncio.gather(*tasks)
         
         return ExamResultList(results=results)
     except Exception as e:
