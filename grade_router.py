@@ -44,6 +44,8 @@ class ExamResult(BaseModel):
         super().__init__(**data)
         self.total_score = sum(c.score for c in self.criteria)
 
+class ExamResultList(BaseModel):
+    results: List[ExamResult]
 
 # Tạo router - không đặt prefix ở đây, sẽ đặt trong main_test.py
 grade_router = APIRouter()
@@ -176,6 +178,33 @@ async def extract_rubric(rubric_file: UploadFile = File(...)):
         return rubric
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@grade_router.post("/grade-exam")
+async def grade_exam(
+    assignment_prompt: str = Form(...),
+    rubric_file: UploadFile = File(...),
+    exam_files: List[UploadFile] = File(...)
+):
+    try:
+        # Extract rubric
+        rubric_content = await rubric_file.read()
+        markdown_text = convert_docx_to_markdown(io.BytesIO(rubric_content))
+        rubric = extract_rubric_from_markdown(markdown_text)
+        
+        # Process each exam file
+        results = []
+        for exam_file in exam_files:
+            file_content = await exam_file.read()
+            result = await call_llm_grading_async(
+                assignment_prompt,
+                rubric.criteria,
+                io.BytesIO(file_content)
+            )
+            results.append(result)
+        
+        return ExamResultList(results=results)
+    except Exception as e:
+        return {"error": str(e)}
 
 @grade_router.post("/upload-and-grade")
 async def upload_and_grade(
