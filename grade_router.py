@@ -237,7 +237,7 @@ async def upload_and_grade(
             "status": "pending",
             "results": []
         }
-        return JSONResponse(content={"session_id": session_id})
+        return {"session_id": session_id}
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid rubric JSON format.")
     except Exception as e:

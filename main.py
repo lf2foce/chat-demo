@@ -15,7 +15,8 @@ app = FastAPI(title="RAG Chat API", version="1.0.0")
 # CORS configuration
 origins = [
     "http://localhost:3000",
-    "https://www.chamdiem.com"
+    "https://www.chamdiem.com",
+    "https://chamdiem.com"
 ]
 
 app.add_middleware(
