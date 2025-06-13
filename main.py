@@ -7,8 +7,8 @@ load_dotenv()
 
 # Import routers sau khi đã load environment variables
 from chat_router import chat_router
+from chat_basic_router import chat_router as chat_basic_router
 from dsdaihoc_router import chat_router  as dsdaihoc_router
-
 from grade_router import grade_router
 
 # FastAPI app
@@ -31,5 +31,6 @@ app.add_middleware(
 
 # Đăng ký router với prefix riêng
 app.include_router(chat_router, tags=["Chat"])
+app.include_router(chat_basic_router, tags=["Chat"])
 app.include_router(dsdaihoc_router, prefix="/dsdaihoc", tags=["dsdahoc"])
 app.include_router(grade_router, prefix="/api/py", tags=["Grade"])

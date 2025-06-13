@@ -1,3 +1,4 @@
+# advanced đang fix
 import os
 import re
 import time
@@ -18,7 +19,7 @@ from llama_index.core.selectors import LLMSingleSelector
 # from llama_index.llms.deepseek import DeepSeek
 # from llama_index.llms.groq import Groq
 # from llama_index.llms.cerebras import Cerebras
-# from llama_index.indices.managed.llama_cloud import LlamaCloudIndex
+from llama_index.indices.managed.llama_cloud import LlamaCloudIndex
 
 from my_module import setup_pinecone_vector_index
 
@@ -101,26 +102,30 @@ class MultiIndexChatEngine:
         )
 
         self.system_prompt = """
-        Bạn là trợ lý AI chuyên nghiệp về sản phẩm của CÔNG TY CỔ PHẦN CÔNG NGHỆ SINH HỌC HOÀ BÌNH 
+           Bạn là trợ lý AI chuyên nghiệp về giáo dục và các trường đại học tại Việt Nam.
         
         NHIỆM VỤ:
-        - Tư vấn sản phẩm một cách chi tiết và hữu ích
-        - Trả lời các câu hỏi về thành phần, công dụng, cách sử dụng
-        - Cung cấp thông tin về giá cả và nơi mua nếu có
-        - Duy trì cuộc trò chuyện tự nhiên và thân thiện
-        - Khi có hình ảnh sản phẩm trong dữ liệu, HÃY LUÔN BAO GỒM trong câu trả lời
-        - Định dạng hình ảnh theo chuẩn Ảnh:URL ở cuối câu trả lời
+        - Tư vấn thông tin về trường đại học
+        - Trả lời về điểm chuẩn, ngành học, tuyển sinh
+        - Thống kê và so sánh giữa các trường
+        - Tìm kiếm trường phù hợp với nhu cầu
+        - Hỗ trợ decision making cho học sinh
         
-        QUY TẮC VỀ HÌNH ẢNH:
-        - Luôn kiểm tra dữ liệu có chứa hình ảnh sản phẩm không
-        - Nếu có hình ảnh phù hợp với câu hỏi, hãy thêm vào câu trả lời
-        - Mỗi hình ảnh phải có mô tả ngắn gọn trước khi hiển thị
-        - Giới hạn tối đa 3 hình ảnh mỗi câu trả lời
+        KHẢ NĂNG ĐẶC BIỆT:
+        - Structured queries: thống kê, so sánh, ranking
+        - Text search: tìm kiếm theo từ khóa tự nhiên
+        - Hybrid approach: kết hợp cả hai phương pháp
         
         PHONG CÁCH:
-        - Sử dụng tiếng Việt tự nhiên, không cứng nhắc
-        - Đưa ra lời khuyên cụ thể và thực tế
-        - Hỏi lại nếu cần làm rõ yêu cầu của khách hàng
+        - Tiếng Việt tự nhiên, thân thiện
+        - Thông tin chính xác, cập nhật
+        - Lời khuyên thiết thực
+        - Giải thích rõ ràng
+        
+        EXAMPLES:
+        - "So sánh điểm chuẩn UIT và PNTU" → Structured query
+        - "Tìm trường y khoa ở TP.HCM" → Text search  
+        - "Top 5 trường điểm chuẩn cao nhất" → Structured query
         """
 
     def chat_stream(self, message: str):
@@ -163,27 +168,28 @@ def setup_rag_system():
 
 
 
-    # index_oniz = LlamaCloudIndex(
-    #     name="subsequent-stork-2025-05-22",
-    #     project_name="Default", 
-    #     organization_id="1bcf5fb2-bd7d-4c76-b6d5-bb793486e1b3",
-    #     api_key=os.getenv("LLAMA_CLOUD_API_KEY"),
-    # )
+ 
 
-    # index_excel = LlamaCloudIndex(
-    #     name="funny-clownfish-2025-05-28",
-    #     project_name="Default", 
-    #     organization_id="1bcf5fb2-bd7d-4c76-b6d5-bb793486e1b3",
-    #     api_key=os.getenv("LLAMA_CLOUD_API_KEY"),
-    # )
+    index_dsdaihoc = LlamaCloudIndex(
+        name="dsdaihoc",
+        project_name="Default",
+        organization_id="1bcf5fb2-bd7d-4c76-b6d5-bb793486e1b3",
+        api_key=os.getenv("LLAMA_CLOUD_API_KEY"),
+        )
 
-    index_pinecone = setup_pinecone_vector_index()
+
+    # index_pinecone = setup_pinecone_vector_index()
     
     indices_config = [
+        # {
+        #     'name': 'Thông tin về các trường đại học tại Việt Nam',
+        #     'index': index_pinecone,
+        #     'description': "Các trường đại học tại Việt Nam"
+        # },
         {
-            'name': 'Thông tin về CÔNG TY CỔ PHẦN CÔNG NGHỆ SINH HỌC HOÀ BÌNH',
-            'index': index_pinecone,
-            'description': "CÔNG TY CỔ PHẦN CÔNG NGHỆ SINH HỌC HOÀ BÌNH"
+            'name': 'Thông tin về các trường đại học tại Việt Nam',
+            'index': index_dsdaihoc,
+            'description': "Các trường đại học tại Việt Nam"
         }
     ]
 

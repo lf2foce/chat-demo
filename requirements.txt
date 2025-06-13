@@ -15,5 +15,6 @@ llama-index-utils-workflow
 llama-index-embeddings-google-genai==0.2.0
 llama-index-llms-google-genai==0.2.1
 llama-index-vector-stores-pinecone
+llama-index-vector-stores-faiss==0.4.0
 # pyvis
 llama-index-experimental==0.5.6
