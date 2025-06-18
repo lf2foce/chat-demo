@@ -1,7 +1,7 @@
 # Enhanced chat router with retriever approach
 import os
 import re
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
@@ -11,6 +11,11 @@ from llama_index.indices.managed.llama_cloud import LlamaCloudIndex
 from llama_index.llms.google_genai import GoogleGenAI
 # from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.core.memory import ChatMemoryBuffer
+from llama_index.core.storage.chat_store import SimpleChatStore
+
+
+
+
 import json
 from dotenv import load_dotenv
 load_dotenv()
@@ -22,30 +27,54 @@ chat_router = APIRouter()
 def extract_and_format_images(text: str):
     """
     Tìm và format các URL hình ảnh trong text thành markdown truyền thống ![alt](url)
+    Nếu có nhiều ảnh, sẽ nhóm lại trong một gallery.
     Returns: (formatted_text, has_images)
     """
-    # Regex tìm URLs
-    url_pattern = r'https?://[^\s\)\]]+'
-
+    # Regex to find markdown image/link patterns that contain image URLs
+    # This pattern looks for ![alt](url) or [text](url) where url is an image URL
+    markdown_image_pattern = r'!\\[.*?\\]\\((https?://[^\s\\)]+\.(?:jpg|jpeg|png|gif|webp|svg)(?:\?.*?)?)\\)'
+    markdown_link_pattern = r'\\[.*?\\]\\((https?://[^\s\\)]+\.(?:jpg|jpeg|png|gif|webp|svg)(?:\?.*?)?)\\)'
+    
     formatted_text = text
     has_images = False
-    found_urls = re.findall(url_pattern, text)
-    image_counter = 1
-
-    for url in found_urls:
-        # Kiểm tra nếu là URL hình ảnh từ các hosting services
-        if (any(domain in url for domain in ["uploadthing", "amazonaws.com", "ufs.sh", "supabase", "cdn", "unsplash"]) or 
-            re.search(r'\.(jpg|jpeg|png|gif|webp|svg)(\?|$)', url, re.IGNORECASE)):
+    image_markups = []
+    gallery_markdown = ""
+    
+    # Find all markdown image patterns and extract URLs
+    found_image_urls = []
+    for match in re.finditer(markdown_image_pattern, text, re.IGNORECASE):
+        full_match = match.group(0) # The entire ![alt](url) string
+        url = match.group(1) # The URL part
+        if any(domain in url for domain in ["uploadthing", "amazonaws.com", "ufs.sh", "supabase", "cdn", "unsplash"]):
+            found_image_urls.append((full_match, url))
             
-            # Tạo markdown image
-            image_markdown = f"\n\n![Ảnh sản phẩm {image_counter}]({url})"
-            
-            # Thay thế URL gốc bằng markdown image
-            formatted_text = formatted_text.replace(url, image_markdown)
-            has_images = True
-            image_counter += 1
+    # Find all markdown link patterns that point to images and extract URLs
+    found_link_urls = []
+    for match in re.finditer(markdown_link_pattern, text, re.IGNORECASE):
+        full_match = match.group(0) # The entire [text](url) string
+        url = match.group(1) # The URL part
+        if any(domain in url for domain in ["uploadthing", "amazonaws.com", "ufs.sh", "supabase", "cdn", "unsplash"]):
+            found_link_urls.append((full_match, url))
 
-    return formatted_text.strip(), has_images
+    # Combine and remove duplicates (if a URL is both an image and a link, unlikely but safe)
+    all_found_items = {} # {full_match: url}
+    for full_match, url in found_image_urls + found_link_urls:
+        all_found_items[full_match] = url
+
+    # Loại bỏ các markdown image/link đã tìm thấy khỏi văn bản gốc
+    for full_match in all_found_items.keys():
+        formatted_text = formatted_text.replace(full_match, "").strip()
+
+    # Tạo markdown cho từng ảnh và nhóm lại
+    if all_found_items:
+        has_images = True
+        for i, (full_match, url) in enumerate(all_found_items.items()):
+            # Use the original URL to create a new markdown image tag
+            image_markups.append(f"![Ảnh sản phẩm {i+1}]({url})")
+        
+        gallery_markdown = "\n\n[IMAGES_START]\n" + "\n".join(image_markups) + "\n[IMAGES_END]\n\n"
+
+    return formatted_text.strip(), gallery_markdown, has_images
 
 # System prompt cho trường đại học
 SYSTEM_PROMPT = """
@@ -56,8 +85,9 @@ Bạn là nữ nhân viên CSKH. Nhiệm vụ của bạn là:
 - Câu trả lời của bạn tự tạo ra cần ngắn gọn, xúc tích, mỗi lần trả lời không được quá 5 dòng. Sử dụng ngôn từ gần gũi, chân thành, không biểu lộ cảm xúc thái quá. Luôn kết thúc tư vấn bằng 1 câu hỏi để duy trì tương tác và hướng khách hàng tới việc mua sản phẩm
 - khi chưa rõ vấn đề, hãy hỏi lại khách hàng để làm rõ nhu cầu
 - Trả lời khách hàng như người quen thân mật, nhưng phải dùng từ ngữ lịch sự, lễ phép.
-- Khi có hình ảnh sản phẩm trong dữ liệu, HÃY LUÔN BAO GỒM URL hình ảnh trong câu trả lời để hệ thống tự động chuyển đổi thành markdown
-
+- Khi có hình ảnh sản phẩm trong dữ liệu, HÃY LUÔN BAO GỒM URL hình ảnh trong câu trả lời để hệ thống tự động chuyển đổi thành markdown. (cách này có thể được thực hiện bằng cách sử dụng [markdown-to-image](https://github.com/tchiotludo/markdown-to-image)).
+    - Đưa ít nhất 2 ảnh cho một nhóm sản phẩm (hoặc tất cả nếu ít hơn 5 ảnh) (ví dụ sữa tắm) (nếu có và khác nhau)
+    - Khi khách chưa biết về đến sản phẩm mà hỏi thì nên trả ra cả ảnh sản phẩm nhé
 - Lưu ý: trong trường hợp khách hàng nóng nảy, bắt đầu dùng ngôn từ bất lịch sự thì hết sức xoa dịu, đồng cảm với khách hàng, giúp đỡ khách hàng nhất có thể. Nếu không thể xoa dịu khách hàng thì xin lấy số điện thoại và hẹn sẽ có nhân viên tư chăm sóc gọi lại
 Here are the relevant documents for the context:
 {context_str}
@@ -69,7 +99,12 @@ Instruction: Use the previous chat history, or the context above, to interact an
 #     model_name="gemini-embedding-exp-03-07",
 #     embed_batch_size=64
 # )
-Settings.llm = GoogleGenAI(model="gemini-2.0-flash")
+Settings.llm = GoogleGenAI(model="gemini-2.5-flash-lite-preview-06-17")
+
+
+
+class ChatRequest(BaseModel):
+    message: str
 
 index = LlamaCloudIndex(
   name="chatbot-ai-demand-2025-05-22",
@@ -78,27 +113,38 @@ index = LlamaCloudIndex(
   api_key=os.getenv("LLAMA_CLOUD_API_KEY_DEMAND")
 )
 
-# Chat memory để lưu lịch sử hội thoại
-chat_memory = ChatMemoryBuffer.from_defaults(token_limit=3000)
 
-# Tạo chat engine với chế độ context + streaming
-chat_engine = index.as_chat_engine(
-    chat_mode="context",
-    memory=chat_memory,
-    system_prompt=SYSTEM_PROMPT,
-    verbose=True,
-    streaming=True
-)
-
-class ChatRequest(BaseModel):
-    message: str
+buffers = {} 
 
 @chat_router.post("/chat-faiss-stream")
-def chat_stream(req: ChatRequest):
+def chat_stream(req: ChatRequest, session_id: str = Header(...)):
     """Enhanced chat với streaming response qua LlamaIndex chat engine."""
+    
+    message = req.message
+    if not message:
+        raise HTTPException(status_code=400, detail="Missing message")
+    
+    # Load hoặc tạo buffer cho phiên chat session_id
+    if session_id not in buffers:
+        buffers[session_id] = ChatMemoryBuffer(
+            token_limit=3000,
+            chat_store=SimpleChatStore(),
+            chat_store_key=session_id
+        )
+    
+    memory = buffers[session_id]
+    
+    chat_engine = index.as_chat_engine(
+        chat_mode="context",
+        memory=memory,
+        system_prompt=SYSTEM_PROMPT,
+        streaming=True,
+        verbose=False
+    )
+
     def event_generator():
         # Lấy kết quả streaming từ chat engine
-        response = chat_engine.stream_chat(req.message)
+        response = chat_engine.stream_chat(message)
         full_text = ""
         
         # Duyệt token trả về
@@ -109,14 +155,12 @@ def chat_stream(req: ChatRequest):
             yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
         
         # Xử lý ảnh sau khi hoàn thành streaming
-        formatted_text, has_images = extract_and_format_images(full_text)
+        original_text, gallery_markdown, has_images = extract_and_format_images(full_text)
         
         # Nếu có ảnh, gửi phần markdown images được thêm vào
         if has_images:
-            # Tìm phần markdown images được thêm vào (phần sau full_text gốc)
-            additional_content = formatted_text[len(full_text):]
-            if additional_content.strip():
-                yield f"data: {json.dumps({'content': additional_content}, ensure_ascii=False)}\n\n"
+            if gallery_markdown.strip():
+                yield f"data: {json.dumps({'content': gallery_markdown}, ensure_ascii=False)}\n\n"
         
         # Kết thúc stream
         yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
@@ -132,7 +176,9 @@ def chat_stream(req: ChatRequest):
     )
 
 @chat_router.post("/reset-chat")
-def reset_chat():
+def reset_chat(session_id: str = Header(...)):
     """Reset chat memory"""
-    chat_memory.reset()
+    """Reset chat memory"""
+    if session_id in buffers:
+        buffers[session_id].reset()
     return {"message": "Chat history reset successfully"}
