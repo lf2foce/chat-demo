@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import httpx
+from llama_index.core import Settings
 from dotenv import load_dotenv
 
 # Load env
@@ -11,14 +14,26 @@ from chat_basic_router import chat_router as chat_basic_router
 # from chat_faiss_router import chat_router as chat_faiss_router
 from chat_engine_cloud_router import chat_router as chat_faiss_router
 from chat_demand_router import chat_router as chat_demand_router
-
 # from chat_engine_router import chat_router as chat_faiss_router
 # from chat_reactagent_router import chat_router as chat_faiss_router
 from dsdaihoc_router import chat_router  as dsdaihoc_router
 from grade_router import grade_router
 
+
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: create httpx client
+    async with httpx.AsyncClient() as client:
+        Settings.http_client = client
+        print("Httpx client started and assigned to LlamaIndex Settings.")
+        yield
+    # Shutdown: client is automatically closed
+    print("Httpx client closed.")
+
 # FastAPI app
-app = FastAPI(title="RAG Chat API", version="1.0.0")
+app = FastAPI(title="RAG Chat API", version="1.0.0",lifespan=lifespan)
 
 # CORS configuration
 origins = [
