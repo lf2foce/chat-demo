@@ -9,8 +9,9 @@ markitdown[pdf, docx, xlsx]
 google-genai==1.19.0
 python-dotenv
 # together==1.5.8
-llama-index==0.12.40
-llama-index-embeddings-huggingface
+llama-index==0.12.43
+llama-index-indices-managed-llama-cloud==0.7.7
+# llama-index-embeddings-huggingface
 llama-index-utils-workflow
 llama-index-embeddings-google-genai==0.2.0
 llama-index-llms-google-genai==0.2.1

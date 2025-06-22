@@ -52,12 +52,12 @@ Bạn là nữ nhân viên CSKH. Nhiệm vụ của bạn là:
 
 - **QUAN TRỌNG**:
     * Khi khách chưa biết về đến sản phẩm mà hỏi thì nên trả ra cả ảnh sản phẩm nhé
-    * Ảnh mặc định hiển thị markdown nhé (khi người dùng không yêu cầu liên quan tới bảng)
+    * LUÔN sử dụng HTML cho ảnh để đảm bảo hiển thị tốt trên mọi thiết bị (đặc biệt mobile)
+    * Sử dụng <img src="url" alt="text" style="max-width:200px;height:auto;"> cho ảnh lẻ
     
-    * Nếu người dùng yêu cầu cả bảng và ảnh thì hiển thị hoàn toàn html. 
-    * Khi tạo bảng có chứa hình ảnh, hãy sử dụng HTML thay vì markdown để tránh lỗi parsing:
+    * Khi tạo bảng có chứa hình ảnh, hãy sử dụng HTML:
     * Sử dụng <table>, <tr>, <td>, <th> cho bảng
-    * Sử dụng <img src="url" alt="text" style="max-width:100px;height:auto;"> cho hình ảnh
+    * Sử dụng <img src="url" alt="text" style="max-width:100px;height:auto;"> cho hình ảnh trong bảng
     Ví dụ:
     Dạ vâng, em gửi anh bảng so sánh các dòng sữa tắm Oniiz:
 
@@ -177,50 +177,79 @@ async def chat_stream(req: ChatRequest, session_id: str = Header(...)):
 
     async def event_generator():
         try:
-            response = await chat_engine.astream_chat(message)
+            # Add timeout for chat response
+            response = await asyncio.wait_for(
+                chat_engine.astream_chat(message),
+                timeout=60.0  # 60 seconds timeout
+            )
             
             # Buffer to accumulate tokens
             buffer = ""
+            token_count = 0
             
             async for token in response.async_response_gen():
-                buffer += token
-                # Send data chunk as a JSON object
-                # This ensures that even if the token is a special character like a quote,
-                # it's safely encapsulated in a JSON string.
-                json_data = json.dumps({"content": token, "session_id": session_id, "success": True}, ensure_ascii=False)
-                yield f"data: {json_data}\n\n"
-                await asyncio.sleep(0.0) # Small delay to prevent overwhelming the client
+                try:
+                    buffer += token
+                    token_count += 1
+                    
+                    # Send data chunk as a JSON object
+                    # This ensures that even if the token is a special character like a quote,
+                    # it's safely encapsulated in a JSON string.
+                    json_data = json.dumps({"content": token, "session_id": session_id, "success": True}, ensure_ascii=False)
+                    yield f"data: {json_data}\n\n"
+                    
+                    # Add small delay every 10 tokens to prevent overwhelming
+                    if token_count % 10 == 0:
+                        await asyncio.sleep(0.01)
+                        
+                except Exception as token_error:
+                    print(f"Error processing token: {token_error}")
+                    # Continue with next token instead of breaking
+                    continue
 
             # Send sources after streaming is complete
             sources = []
-            if hasattr(response, 'source_nodes') and response.source_nodes:
-                # Filter sources with score > 40% and limit to 5 sources
-                filtered_nodes = [node for node in response.source_nodes if getattr(node, 'score', 0.0) > 0.4]
-                # Limit to top 5 sources
-                filtered_nodes = filtered_nodes[:5]
-                
-                for i, node in enumerate(filtered_nodes):
-                    # Safely get metadata
-                    metadata = getattr(node, 'metadata', {})
-                    file_name = metadata.get('file_name', f"Tài liệu {i+1}")
+            try:
+                if hasattr(response, 'source_nodes') and response.source_nodes:
+                    # Filter sources with score > 40% and limit to 5 sources
+                    filtered_nodes = [node for node in response.source_nodes if getattr(node, 'score', 0.0) > 0.4]
+                    # Limit to top 5 sources
+                    filtered_nodes = filtered_nodes[:5]
                     
-                    source_info = {
-                        "id": i + 1,
-                        "title": file_name,
-                        "content": node.text[:300] + "..." if len(node.text) > 300 else node.text,
-                        "score": getattr(node, 'score', 0.0)
-                    }
-                    sources.append(source_info)
-            
-            # Send sources as final message
-            if sources:
-                sources_data = json.dumps({
-                    "sources": sources, 
-                    "session_id": session_id, 
-                    "success": True,
-                    "type": "sources"
-                }, ensure_ascii=False)
-                yield f"data: {sources_data}\n\n"
+                    for i, node in enumerate(filtered_nodes):
+                        try:
+                            # Safely get metadata
+                            metadata = getattr(node, 'metadata', {})
+                            file_name = metadata.get('file_name', f"Tài liệu {i+1}")
+                            
+                            # Safely get node text
+                            node_text = getattr(node, 'text', '')
+                            if not node_text:
+                                node_text = "Không có nội dung"
+                            
+                            source_info = {
+                                "id": i + 1,
+                                "title": file_name,
+                                "content": node_text[:300] + "..." if len(node_text) > 300 else node_text,
+                                "score": getattr(node, 'score', 0.0)
+                            }
+                            sources.append(source_info)
+                        except Exception as source_error:
+                            print(f"Error processing source {i}: {source_error}")
+                            continue
+                
+                # Send sources as final message
+                if sources:
+                    sources_data = json.dumps({
+                        "sources": sources, 
+                        "session_id": session_id, 
+                        "success": True,
+                        "type": "sources"
+                    }, ensure_ascii=False)
+                    yield f"data: {sources_data}\n\n"
+            except Exception as sources_error:
+                print(f"Error processing sources: {sources_error}")
+                # Continue without sources if there's an error
 
             print(f"[{session_id}] ===== FULL STREAMED RESPONSE =====")
             print(f"Response length: {len(buffer)}")
@@ -228,8 +257,28 @@ async def chat_stream(req: ChatRequest, session_id: str = Header(...)):
             print(f"Sources count: {len(sources)}")
             print(f"[{session_id}] ===== END STREAMED RESPONSE =====")
 
+        except asyncio.TimeoutError:
+            print(f"[{session_id}] Timeout error during streaming")
+            error_message = {
+                "content": "Xin lỗi, phản hồi mất quá nhiều thời gian. A/c vui lòng thử lại nhé.",
+                "session_id": session_id,
+                "success": False,
+                "error": "timeout",
+                "type": "error"
+            }
+            yield f"data: {json.dumps(error_message, ensure_ascii=False)}\n\n"
+        except ConnectionError as e:
+            print(f"[{session_id}] Connection error during streaming: {e}")
+            error_message = {
+                "content": "Xin lỗi, có lỗi kết nối. A/c vui lòng kiểm tra mạng và thử lại nhé.",
+                "session_id": session_id,
+                "success": False,
+                "error": "connection_error",
+                "type": "error"
+            }
+            yield f"data: {json.dumps(error_message, ensure_ascii=False)}\n\n"
         except Exception as e:
-            print(f"Error during streaming: {e}")
+            print(f"[{session_id}] Unexpected error during streaming: {e}")
             error_message = {
                 "content": "Xin lỗi, em đang tìm dữ liệu. A/c vui lòng thử lại nhé.",
                 "session_id": session_id,
@@ -237,7 +286,13 @@ async def chat_stream(req: ChatRequest, session_id: str = Header(...)):
                 "error": str(e),
                 "type": "error"
             }
-            yield f"data: {json.dumps(error_message)}\n\n"
+            yield f"data: {json.dumps(error_message, ensure_ascii=False)}\n\n"
+        finally:
+            # Ensure stream ends properly
+            try:
+                yield f"data: {json.dumps({'type': 'stream_end', 'session_id': session_id}, ensure_ascii=False)}\n\n"
+            except:
+                pass
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
