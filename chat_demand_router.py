@@ -27,6 +27,106 @@ from dotenv import load_dotenv
 from image_data import IMAGE_DATA, get_product_image, get_all_product_images, search_images_by_tags
 load_dotenv()
 
+def generate_smart_suggestions(response_content: str, session_id: str = None) -> list:
+    """Generate dynamic smart suggestions using fast LLM with chat history context"""
+    if not response_content:
+        return []
+    
+    try:
+        # Use faster model for suggestions generation
+        
+        fast_llm = GoogleGenAI(model="gemini-2.5-flash-lite-preview-06-17", temperature=0.3)
+        
+        # Get chat history if session_id is provided
+        chat_history = ""
+        if session_id and session_id in buffers:
+            try:
+                # Get recent chat messages from memory buffer
+                memory_buffer = buffers[session_id]
+                chat_messages = memory_buffer.get_all()
+                
+                # Extract last few exchanges (limit to avoid token overflow)
+                recent_messages = []
+                for msg in chat_messages[-6:]:  # Last 3 exchanges (user + assistant)
+                    if hasattr(msg, 'content'):
+                        role = "User" if msg.role.value == "user" else "AI"
+                        recent_messages.append(f"{role}: {msg.content[:200]}")
+                
+                if recent_messages:
+                    chat_history = "\n".join(recent_messages)
+            except Exception as e:
+                print(f"Error getting chat history: {e}")
+                chat_history = ""
+        
+        # Let LLM analyze the full context without pre-filtering products
+        
+        # Enhanced prompt with chat history context
+        history_context = f"\n\nLịch sử trò chuyện gần đây:\n{chat_history}" if chat_history else ""
+        
+        prompt = f"""Phân tích cuộc trò chuyện và tạo 4 câu hỏi thông minh (dưới 35 ký tự) để khách hàng tiếp tục hỏi:
+
+Phản hồi mới nhất: "{response_content[:500]}"{history_context}
+
+Sản phẩm Oniiz:
+- Bọt vệ sinh: Classical (bạc hà), Perfume (nước hoa), Amorous (quyến rũ)
+- Sữa tắm: Bel Homme (thanh lịch), Men In Black (nam tính)
+- Nước hoa: Paris (ngọt ngào), Miami (tươi mát)
+- Xịt thơm miệng: 3 loại khác nhau
+- Bao cao su V2Joy: 4 hương đặc biệt
+
+Yêu cầu:
+- Tạo câu hỏi tự nhiên, phù hợp ngữ cảnh cuộc trò chuyện
+- Khuyến khích khách hàng tìm hiểu sâu hơn về sản phẩm
+- Hướng đến việc mua hàng một cách tự nhiên
+- Mỗi câu dưới 35 ký tự, dễ hiểu
+
+Chỉ trả về 4 câu hỏi, mỗi dòng một câu, không đánh số:
+Bọt vệ sinh nào phù hợp nhất?
+Giá sữa tắm Bel Homme bao nhiêu?
+Nước hoa Paris có mùi như thế nào?
+Có khuyến mãi gì không em?"""
+        
+        response = fast_llm.complete(prompt)
+        
+        # Parse and clean suggestions
+        suggestions_text = response.text.strip()
+        suggestions = []
+        
+        for line in suggestions_text.split('\n'):
+            clean_line = line.strip('- •123456789. ').strip()
+            if clean_line and len(clean_line) <= 35 and clean_line not in suggestions:
+                suggestions.append(clean_line)
+        
+        # Enhanced fallback suggestions - natural and contextual
+        if len(suggestions) < 4:
+            fallback_suggestions = [
+                "Sản phẩm nào phù hợp với anh?",
+                "Có gì mới không em?",
+                "Chất lượng thế nào vậy?",
+                "Giá bao nhiêu vậy em?",
+                "Có combo ưu đãi nào không?",
+                "Có khuyến mãi gì không em?",
+                "Sản phẩm nào phù hợp nhất?",
+                "Mua ở đâu được không em?"
+            ]
+            
+            # Add fallback suggestions up to 4 total
+            for suggestion in fallback_suggestions:
+                if len(suggestions) < 4 and len(suggestion) <= 35:
+                    suggestions.append(suggestion)
+        
+        return suggestions[:4]
+        
+    except Exception as e:
+        print(f"Error generating smart suggestions: {e}")
+        # Product-focused fallbacks
+        return [
+            "Bọt vệ sinh có mấy hương vậy?",
+            "Sữa tắm nào phù hợp với anh?", 
+            "Giá cả như thế nào?",
+            "Em tư vấn sản phẩm cho anh nhé"
+        ]
+
 
 
 chat_router = APIRouter()
@@ -126,7 +226,7 @@ Instruction: Use the previous chat history, or the context above, to interact an
 #     embed_batch_size=64
 # )
 # Settings.llm = GoogleGenAI(model="gemini-2.0-flash")
-Settings.llm = GoogleGenAI(model="gemini-2.5-flash")
+Settings.llm = GoogleGenAI(model="gemini-2.0-flash")
 
 # Settings.llm=Groq(
 #     model="llama3-70b-8192",
@@ -290,10 +390,22 @@ async def chat_stream(req: ChatRequest, session_id: str = Header(...)):
                 print(f"Error processing sources: {sources_error}")
                 # Continue without sources if there's an error
 
+            # Generate smart suggestions using LLM based on response content and chat history
+            smart_suggestions = generate_smart_suggestions(buffer, session_id)
+            print(f"🧠 LLM generated {len(smart_suggestions)} smart suggestions: {smart_suggestions}")
+            
+            if smart_suggestions:
+                suggestions_data = {
+                    "type": "smart_suggestions",
+                    "suggestions": smart_suggestions
+                }
+                yield f"data: {json.dumps(suggestions_data)}\n\n"
+            # end suggestion
             print(f"[{session_id}] ===== FULL STREAMED RESPONSE =====")
             print(f"Response length: {len(buffer)}")
             print(f"Response content: {buffer}")
             print(f"Sources count: {len(sources)}")
+            print(f"Smart suggestions count: {len(smart_suggestions) if smart_suggestions else 0}")
             print(f"[{session_id}] ===== END STREAMED RESPONSE =====")
 
         except asyncio.TimeoutError:
