@@ -150,7 +150,7 @@ Bạn là nữ nhân viên CSKH chuyên nghiệp. Nhiệm vụ:
 
 ## QUY TẮC HIỂN THỊ HÌNH ẢNH - BẮT BUỘC
 
-### 1. HÌNH ẢNH ĐƠN LẺ - SỬ DỤNG MARKDOWN
+### 1. KHI HÌNH ẢNH ĐI VỚI CHỮ (TEXT)
 **MẶC ĐỊNH:** Luôn hiển thị ảnh đơn lẻ bằng Markdown
 - CHỈ sử dụng URL từ KHO ẢNH SẢN PHẨM ở trên
 - Format: `![Tên sản phẩm](URL)` 
@@ -165,7 +165,7 @@ Dạ, đây là hình ảnh sản phẩm anh nhé:
 Anh có muốn biết thêm gì về sản phẩm này không?
 ```
 
-### 2. KHI TRẢ RA BẢNG  - CHỈ SỬ DỤNG HTML
+### 2. CHỈ SỬ DỤNG BẢNG HTML, tuyệt đốt không dùng cấu trúc bảng markdown
 **Khi nào dùng:** Khách hàng yêu cầu so sánh nhiều sản phẩm
 - Từ khóa: "so sánh", "khác nhau gì", "bảng so sánh", "tất cả sản phẩm"
 - Sử dụng <img src="url" alt="text"> cho hình ảnh trong bảng
@@ -314,19 +314,16 @@ async def chat_stream(req: ChatRequest, session_id: str = Header(...)):
 
     chat_engine = await get_chat_engine(session_id)
 
-    async def event_generator():
+    def event_generator():
         try:
-            # Add timeout for chat response
-            response = await asyncio.wait_for(
-                chat_engine.astream_chat(message),
-                timeout=60.0  # 60 seconds timeout
-            )
+            # Get sync response instead of async
+            response = chat_engine.stream_chat(message)
             
             # Buffer to accumulate tokens
             buffer = ""
             token_count = 0
             
-            async for token in response.async_response_gen():
+            for token in response.response_gen:
                 try:
                     buffer += token
                     token_count += 1
@@ -339,7 +336,7 @@ async def chat_stream(req: ChatRequest, session_id: str = Header(...)):
                     
                     # Add small delay every 10 tokens to prevent overwhelming
                     if token_count % 10 == 0:
-                        await asyncio.sleep(0.01)
+                        time.sleep(0.01)
                         
                 except Exception as token_error:
                     print(f"Error processing token: {token_error}")
@@ -407,17 +404,6 @@ async def chat_stream(req: ChatRequest, session_id: str = Header(...)):
             print(f"Sources count: {len(sources)}")
             print(f"Smart suggestions count: {len(smart_suggestions) if smart_suggestions else 0}")
             print(f"[{session_id}] ===== END STREAMED RESPONSE =====")
-
-        except asyncio.TimeoutError:
-            print(f"[{session_id}] Timeout error during streaming")
-            error_message = {
-                "content": "Xin lỗi, phản hồi mất quá nhiều thời gian. A/c vui lòng thử lại nhé.",
-                "session_id": session_id,
-                "success": False,
-                "error": "timeout",
-                "type": "error"
-            }
-            yield f"data: {json.dumps(error_message, ensure_ascii=False)}\n\n"
         except ConnectionError as e:
             print(f"[{session_id}] Connection error during streaming: {e}")
             error_message = {
