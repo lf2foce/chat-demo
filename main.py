@@ -55,7 +55,6 @@ app.add_middleware(
 app.include_router(chat_router, tags=["Chat"])
 app.include_router(chat_basic_router, tags=["Chat"])
 app.include_router(chat_faiss_router, tags=["Chat"])
-app.include_router(chat_faiss_router, tags=["Chat"])
 app.include_router(chat_demand_router, prefix="/api/py", tags=["Chat"])
 app.include_router(dsdaihoc_router, prefix="/dsdaihoc", tags=["dsdahoc"])
 app.include_router(grade_router, prefix="/api/py", tags=["Grade"])
